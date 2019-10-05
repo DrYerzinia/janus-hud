@@ -2,6 +2,10 @@
 <ui version="4.0">
  <class>ImageViewWidget</class>
  <widget class="QWidget" name="ImageViewWidget">
+  <property name="styleSheet">
+       <string notr="true">background-color:#000000;
+       </string>
+  </property>
   <property name="enabled">
    <bool>true</bool>
   </property>
@@ -14,7 +18,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Image View</string>
+   <string>HUD</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout" stretch="0,1">
    <property name="margin">
@@ -222,6 +226,7 @@
      </layout>
     </widget>
    </item>
+
    <item>
     <layout class="QHBoxLayout" name="image_layout" stretch="1,0">
      <property name="spacing">
@@ -252,7 +257,7 @@
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
           <item>
-           <widget class="rqt_image_view::RatioLayoutedFrame" name="image_frame">
+           <widget class="rqt_hud::RatioLayoutedFrame" name="image_frame">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
               <horstretch>0</horstretch>
@@ -285,13 +290,16 @@
      </item>
     </layout>
    </item>
+
   </layout>
+
  </widget>
+
  <customwidgets>
   <customwidget>
-   <class>rqt_image_view::RatioLayoutedFrame</class>
+   <class>rqt_hud::RatioLayoutedFrame</class>
    <extends>QFrame</extends>
-   <header>rqt_image_view/ratio_layouted_frame.h</header>
+   <header>rqt_hud/ratio_layouted_frame.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

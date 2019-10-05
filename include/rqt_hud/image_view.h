@@ -30,8 +30,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef rqt_image_view__ImageView_H
-#define rqt_image_view__ImageView_H
+#ifndef rqt_hud__ImageView_H
+#define rqt_hud__ImageView_H
 
 #include <rqt_gui_cpp/plugin.h>
 
@@ -42,6 +42,8 @@
 #include <ros/macros.h>
 #include <sensor_msgs/Image.h>
 #include <geometry_msgs/Point.h>
+#include <sensor_msgs/Imu.h>
+#include <std_msgs/Float64.h>
 
 #include <opencv2/core/core.hpp>
 
@@ -54,7 +56,7 @@
 
 #include <vector>
 
-namespace rqt_image_view {
+namespace rqt_hud {
 
 class ImageView
   : public rqt_gui_cpp::Plugin
@@ -114,6 +116,10 @@ protected slots:
 
 protected:
 
+  void imuCallback(const sensor_msgs::Imu::ConstPtr& msg);
+  void imuTempCallback(const std_msgs::Float64::ConstPtr& msg);
+  void batteryVoltageCallback(const std_msgs::Float64::ConstPtr& msg);
+
   virtual void callbackImage(const sensor_msgs::Image::ConstPtr& msg);
 
   virtual void invertPixels(int x, int y);
@@ -131,6 +137,19 @@ protected:
   cv::Mat conversion_mat_;
 
 private:
+
+  double roll;
+  double pitch;
+  double yaw;
+
+  double depth;
+
+  double imu_temp;
+  double battery_voltage;
+
+  ros::Subscriber imu_sub;
+  ros::Subscriber imu_temp_sub;
+  ros::Subscriber battery_voltage_sub;
 
   enum RotateState {
     ROTATE_0 = 0,
@@ -157,4 +176,4 @@ private:
 
 }
 
-#endif // rqt_image_view__ImageView_H
+#endif // rqt_hud__ImageView_H

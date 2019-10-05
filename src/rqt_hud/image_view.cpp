@@ -30,7 +30,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <rqt_image_view/image_view.h>
+#include <rqt_hud/image_view.h>
 
 #include <pluginlib/class_list_macros.h>
 #include <ros/master.h>
@@ -39,11 +39,13 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <tf/transform_datatypes.h>
+
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QPainter>
 
-namespace rqt_image_view {
+namespace rqt_hud {
 
 ImageView::ImageView()
   : rqt_gui_cpp::Plugin()
@@ -52,6 +54,25 @@ ImageView::ImageView()
   , rotate_state_(ROTATE_0)
 {
   setObjectName("ImageView");
+}
+
+void ImageView::imuTempCallback(const std_msgs::Float64::ConstPtr& msg)
+{
+}
+
+void ImageView::batteryVoltageCallback(const std_msgs::Float64::ConstPtr& msg)
+{
+}
+
+void ImageView::imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
+{
+
+  ROS_INFO("Imu Orientation x: [%f], y: [%f], z: [%f], w: [%f]", msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+
+  tf::Quaternion quat;
+  tf::quaternionMsgToTF(msg->orientation, quat);
+  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+
 }
 
 void ImageView::initPlugin(qt_gui_cpp::PluginContext& context)
@@ -94,6 +115,21 @@ void ImageView::initPlugin(qt_gui_cpp::PluginContext& context)
   pub_topic_custom_ = false;
 
   ui_.image_frame->setOuterLayout(ui_.image_layout);
+
+  //
+  roll = 0.0;
+  pitch = 0.0;
+  yaw = 0.0;
+
+  depth = 0.0;
+
+  imu_temp = 0.0;
+  battery_voltage = 0.0;
+
+  // Start subscribing to IMU topic
+  imu_sub = getNodeHandle().subscribe("imu", 1, &ImageView::imuCallback, this);
+  imu_temp_sub = getNodeHandle().subscribe("imu_temp", 1, &ImageView::imuTempCallback, this);
+  battery_voltage_sub = getNodeHandle().subscribe("battery_voltage", 1, &ImageView::batteryVoltageCallback, this);
 
   QRegExp rx("([a-zA-Z/][a-zA-Z0-9_/]*)?"); //see http://www.ros.org/wiki/ROS/Concepts#Names.Valid_Names (but also accept an empty field)
   ui_.publish_click_location_topic_line_edit->setValidator(new QRegExpValidator(rx, this));
@@ -355,10 +391,13 @@ void ImageView::onZoom1(bool checked)
     }
     ui_.image_frame->setInnerFrameFixedSize(ui_.image_frame->getImage().size());
   } else {
+    ui_.image_frame->setInnerFrameFixedSize(QSize(576, 432));
+    /*
     ui_.image_frame->setInnerFrameMinimumSize(QSize(80, 60));
     ui_.image_frame->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
     widget_->setMinimumSize(QSize(80, 60));
     widget_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
+    */
   }
 }
 
@@ -648,6 +687,44 @@ void ImageView::callbackImage(const sensor_msgs::Image::ConstPtr& msg)
       break;
   }
 
+  // Draw HUD
+  // Write heading to screen In middle
+  {
+    int image_center = conversion_mat_.cols / 2;
+    std::string yaw_str = std::to_string((int) (yaw * (180.0 / M_PI)));
+    int baseline = 0;
+    cv::Size textsize = cv::getTextSize(yaw_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
+    cv::Point textOrg(image_center - textsize.width/2, 30 - textsize.height/2);
+    cv::putText(conversion_mat_, yaw_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+  }
+  // Draw heading tick indicators along top
+  // Write battery voltage on top left
+  {
+    std::string battery_voltage_str = std::to_string((int) (battery_voltage)) + "V";
+    int baseline = 0;
+    cv::Size textsize = cv::getTextSize(battery_voltage_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
+    cv::Point textOrg(30, 30 - textsize.height/2);
+    cv::putText(conversion_mat_, battery_voltage_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+  }
+  // Draw imu temp under battery voltage
+  {
+    std::string imu_temp_str = std::to_string((int) (imu_temp)) + "C";
+    int baseline = 0;
+    cv::Size textsize = cv::getTextSize(imu_temp_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
+    cv::Point textOrg(30, 60 - textsize.height/2);
+    cv::putText(conversion_mat_, imu_temp_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+  }
+  // Draw pitch indicators at 5 degree ticks +- 3 indicators from current zero and rotate them to current roll angle
+  // Current depth numbers on right side
+  {
+    std::string depth_str = std::to_string(depth) + "m";
+    int baseline = 0;
+    cv::Size textsize = cv::getTextSize(depth_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
+    cv::Point textOrg(conversion_mat_.cols - 30 - textsize.width/2, conversion_mat_.rows / 2 - textsize.height/2);
+    cv::putText(conversion_mat_, depth_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+  }
+  // Draw depth indicator along right side
+
   // image must be copied since it uses the conversion_mat_ for storage which is asynchronously overwritten in the next callback invocation
   QImage image(conversion_mat_.data, conversion_mat_.cols, conversion_mat_.rows, conversion_mat_.step[0], QImage::Format_RGB888);
   ui_.image_frame->setImage(image);
@@ -662,4 +739,4 @@ void ImageView::callbackImage(const sensor_msgs::Image::ConstPtr& msg)
 }
 }
 
-PLUGINLIB_EXPORT_CLASS(rqt_image_view::ImageView, rqt_gui_cpp::Plugin)
+PLUGINLIB_EXPORT_CLASS(rqt_hud::ImageView, rqt_gui_cpp::Plugin)
