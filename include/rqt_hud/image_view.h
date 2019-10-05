@@ -42,6 +42,7 @@
 #include <ros/macros.h>
 #include <sensor_msgs/Image.h>
 #include <geometry_msgs/Point.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Float64.h>
 
@@ -118,6 +119,7 @@ protected:
 
   void imuCallback(const sensor_msgs::Imu::ConstPtr& msg);
   void imuTempCallback(const std_msgs::Float64::ConstPtr& msg);
+  void depthCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg);
   void batteryVoltageCallback(const std_msgs::Float64::ConstPtr& msg);
 
   virtual void callbackImage(const sensor_msgs::Image::ConstPtr& msg);
@@ -149,6 +151,7 @@ private:
 
   ros::Subscriber imu_sub;
   ros::Subscriber imu_temp_sub;
+  ros::Subscriber depth_sub;
   ros::Subscriber battery_voltage_sub;
 
   enum RotateState {

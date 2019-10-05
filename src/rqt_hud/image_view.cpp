@@ -58,21 +58,33 @@ ImageView::ImageView()
 
 void ImageView::imuTempCallback(const std_msgs::Float64::ConstPtr& msg)
 {
+  imu_temp = msg->data;
 }
 
 void ImageView::batteryVoltageCallback(const std_msgs::Float64::ConstPtr& msg)
 {
+  battery_voltage = msg->data;
+}
+
+void ImageView::depthCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg)
+{
+  depth = msg->pose.pose.position.z;
 }
 
 void ImageView::imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
 {
 
-  ROS_INFO("Imu Orientation x: [%f], y: [%f], z: [%f], w: [%f]", msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+  //ROS_INFO("Imu Orientation x: [%f], y: [%f], z: [%f], w: [%f]", msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
 
   tf::Quaternion quat;
   tf::quaternionMsgToTF(msg->orientation, quat);
   tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
 
+}
+
+std::string to_string(double doubleVal, int precisionVal)
+{
+  return std::to_string(doubleVal).substr(0, std::to_string(doubleVal).find(".") + precisionVal + 1);
 }
 
 void ImageView::initPlugin(qt_gui_cpp::PluginContext& context)
@@ -127,11 +139,12 @@ void ImageView::initPlugin(qt_gui_cpp::PluginContext& context)
   battery_voltage = 0.0;
 
   // Start subscribing to IMU topic
-  imu_sub = getNodeHandle().subscribe("imu", 1, &ImageView::imuCallback, this);
-  imu_temp_sub = getNodeHandle().subscribe("imu_temp", 1, &ImageView::imuTempCallback, this);
-  battery_voltage_sub = getNodeHandle().subscribe("battery_voltage", 1, &ImageView::batteryVoltageCallback, this);
-
+  imu_sub = getNodeHandle().subscribe("/janus/cusub_common/imu", 1, &ImageView::imuCallback, this);
+  imu_temp_sub = getNodeHandle().subscribe("/janus/cusub_common/imu_temp_c", 1, &ImageView::imuTempCallback, this);
+  depth_sub = getNodeHandle().subscribe("/janus/cusub_common/depth_odom", 1, &ImageView::depthCallback, this);
+  battery_voltage_sub = getNodeHandle().subscribe("/janus/cusub_common/battery_voltage", 1, &ImageView::batteryVoltageCallback, this);
   QRegExp rx("([a-zA-Z/][a-zA-Z0-9_/]*)?"); //see http://www.ros.org/wiki/ROS/Concepts#Names.Valid_Names (but also accept an empty field)
+
   ui_.publish_click_location_topic_line_edit->setValidator(new QRegExpValidator(rx, this));
   connect(ui_.publish_click_location_check_box, SIGNAL(toggled(bool)), this, SLOT(onMousePublish(bool)));
   connect(ui_.image_frame, SIGNAL(mouseLeft(int, int)), this, SLOT(onMouseLeft(int, int)));
@@ -687,6 +700,8 @@ void ImageView::callbackImage(const sensor_msgs::Image::ConstPtr& msg)
       break;
   }
 
+  cv::Scalar uiColor(0,250,0);
+
   // Draw HUD
   // Write heading to screen In middle
   {
@@ -695,33 +710,59 @@ void ImageView::callbackImage(const sensor_msgs::Image::ConstPtr& msg)
     int baseline = 0;
     cv::Size textsize = cv::getTextSize(yaw_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
     cv::Point textOrg(image_center - textsize.width/2, 30 - textsize.height/2);
-    cv::putText(conversion_mat_, yaw_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+    cv::putText(conversion_mat_, yaw_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, uiColor, 1, CV_AA);
   }
   // Draw heading tick indicators along top
   // Write battery voltage on top left
   {
-    std::string battery_voltage_str = std::to_string((int) (battery_voltage)) + "V";
+    std::string battery_voltage_str = to_string(battery_voltage, 2) + "V";
     int baseline = 0;
     cv::Size textsize = cv::getTextSize(battery_voltage_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
     cv::Point textOrg(30, 30 - textsize.height/2);
-    cv::putText(conversion_mat_, battery_voltage_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+    cv::putText(conversion_mat_, battery_voltage_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, uiColor, 1, CV_AA);
   }
   // Draw imu temp under battery voltage
   {
-    std::string imu_temp_str = std::to_string((int) (imu_temp)) + "C";
+    std::string imu_temp_str = to_string(imu_temp, 1) + "C";
     int baseline = 0;
     cv::Size textsize = cv::getTextSize(imu_temp_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
     cv::Point textOrg(30, 60 - textsize.height/2);
-    cv::putText(conversion_mat_, imu_temp_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+    cv::putText(conversion_mat_, imu_temp_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, uiColor, 1, CV_AA);
   }
   // Draw pitch indicators at 5 degree ticks +- 3 indicators from current zero and rotate them to current roll angle
+  {
+
+    //ROS_INFO("ROLL %f", roll);
+
+    float radius = conversion_mat_.cols * 0.2;
+    int x1 = conversion_mat_.cols / 2 - cos(roll) * radius;
+    int y1 = conversion_mat_.rows / 2 - sin(roll) * radius + pitch * 100;
+    int x2 = conversion_mat_.cols / 2 + cos(roll) * radius;
+    int y2 = conversion_mat_.rows / 2 + sin(roll) * radius + pitch * 100;
+    cv::Point pt1(x1,y1), pt2(x2,y2);
+    cv::line(conversion_mat_, pt1, pt2, uiColor);
+
+    x1 = conversion_mat_.cols / 2 - radius - 10;
+    y1 = conversion_mat_.rows / 2;
+    x2 = conversion_mat_.cols / 2 - radius;
+    y2 = conversion_mat_.rows / 2;
+    cv::line(conversion_mat_, cv::Point(x1,y1), cv::Point(x2,y2), uiColor);
+
+    x1 = conversion_mat_.cols / 2 + radius + 10;
+    y1 = conversion_mat_.rows / 2;
+    x2 = conversion_mat_.cols / 2 + radius;
+    y2 = conversion_mat_.rows / 2;
+    cv::line(conversion_mat_, cv::Point(x1,y1), cv::Point(x2,y2), uiColor);
+
+
+  }
   // Current depth numbers on right side
   {
-    std::string depth_str = std::to_string(depth) + "m";
+    std::string depth_str = to_string(depth, 2) + "m";
     int baseline = 0;
     cv::Size textsize = cv::getTextSize(depth_str.c_str(), cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, 1, &baseline);
-    cv::Point textOrg(conversion_mat_.cols - 30 - textsize.width/2, conversion_mat_.rows / 2 - textsize.height/2);
-    cv::putText(conversion_mat_, depth_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0,250,0), 1, CV_AA);
+    cv::Point textOrg(conversion_mat_.cols - 40 - textsize.width/2, conversion_mat_.rows / 2);
+    cv::putText(conversion_mat_, depth_str.c_str(), textOrg, cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, uiColor, 1, CV_AA);
   }
   // Draw depth indicator along right side
 
